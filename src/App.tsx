@@ -6,6 +6,7 @@ import { JobManager } from './components/JobManager';
 import { DeviceList } from './components/DeviceList';
 import { AlertHistory } from './components/AlertHistory';
 import { Settings } from './components/Settings';
+import { Console } from './components/Console';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -22,6 +23,8 @@ function App() {
         return <AlertHistory />;
       case 'settings':
         return <Settings />;
+      case 'console':
+        return <Console />;
       default:
         return <Dashboard />;
     }

@@ -18,6 +18,7 @@ import deviceRoutes from './routes/devices.js';
 import alertRoutes from './routes/alerts.js';
 import scanRoutes from './routes/scans.js';
 import settingsRoutes from './routes/settings.js';
+import consoleRoutes from './routes/console.js';
 
 dotenv.config();
 
@@ -69,6 +70,7 @@ app.use('/api/devices', deviceRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/scans', scanRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/console', consoleRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

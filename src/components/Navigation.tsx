@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, Activity, Settings, History, Users } from 'lucide-react';
+import { Shield, Activity, Settings, History, Users, Terminal } from 'lucide-react';
 
 interface NavigationProps {
   activeTab?: string;
@@ -12,6 +12,7 @@ export function Navigation({ activeTab = 'dashboard', onTabChange }: NavigationP
     { id: 'jobs', label: 'Jobs', icon: Shield },
     { id: 'devices', label: 'Devices', icon: Users },
     { id: 'history', label: 'History', icon: History },
+    { id: 'console', label: 'Console', icon: Terminal },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
