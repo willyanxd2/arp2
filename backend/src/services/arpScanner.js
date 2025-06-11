@@ -9,7 +9,7 @@ export class ArpScanner {
     this.isScanning = false;
   }
 
-  async scanNetwork(netInterfaces, subnets, timeout = 30) {
+  async scanNetwork(networkInterfaces, subnets, timeout = 30) {
     if (this.isScanning) {
       throw new Error('Scan already in progress');
     }
@@ -21,10 +21,10 @@ export class ArpScanner {
       const devices = [];
       
       for (const subnet of subnets) {
-        for (const iface of netInterfaces) {
-          logger.info(`Scanning subnet ${subnet} on interface ${iface}`);
+        for (const networkInterface of networkInterfaces) {
+          logger.info(`Scanning subnet ${subnet} on interface ${networkInterface}`);
           
-          const scanResults = await this.executeArpScan(iface, subnet, timeout);
+          const scanResults = await this.executeArpScan(networkInterface, subnet, timeout);
           devices.push(...scanResults);
         }
       }
@@ -53,9 +53,9 @@ export class ArpScanner {
     }
   }
 
-  async executeArpScan(netInterface, subnet, timeout) {
+  async executeArpScan(networkInterface, subnet, timeout) {
     return new Promise((resolve, reject) => {
-      const args = ['-l', '-t', timeout.toString(), '-I', netInterface, subnet];
+      const args = ['-I', networkInterface, subnet];
       const arpScan = spawn('arp-scan', args);
       
       let stdout = '';
@@ -100,6 +100,7 @@ export class ArpScanner {
       if (line.startsWith('Interface:') || 
           line.startsWith('Starting arp-scan') || 
           line.includes('packets received') ||
+          line.includes('Ending arp-scan') ||
           line.trim() === '') {
         continue;
       }

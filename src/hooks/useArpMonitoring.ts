@@ -11,82 +11,145 @@ export function useArpMonitoring() {
   const [isScanning, setIsScanning] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
+
+  // Check API connection
+  const checkConnection = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL.replace('/api', '')}/health`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+      
+      if (response.ok) {
+        setConnectionStatus('connected');
+        setError(null);
+        return true;
+      } else {
+        throw new Error(`Server responded with status: ${response.status}`);
+      }
+    } catch (err) {
+      console.error('API connection check failed:', err);
+      setConnectionStatus('disconnected');
+      setError(`Cannot connect to backend API at ${API_BASE_URL}. Please ensure the backend service is running.`);
+      return false;
+    }
+  }, []);
+
+  // Enhanced fetch with better error handling
+  const fetchWithErrorHandling = useCallback(async (endpoint: string, options?: RequestInit) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        ...options,
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          ...options?.headers,
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error(`Endpoint not found: ${endpoint}`);
+        } else if (response.status >= 500) {
+          throw new Error(`Server error (${response.status}): ${response.statusText}`);
+        } else {
+          throw new Error(`Request failed (${response.status}): ${response.statusText}`);
+        }
+      }
+
+      return await response.json();
+    } catch (err) {
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        throw new Error(`Network error: Cannot connect to backend API at ${API_BASE_URL}`);
+      }
+      throw err;
+    }
+  }, []);
 
   // Fetch data from API
   const fetchJobs = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/jobs`);
-      if (!response.ok) throw new Error('Failed to fetch jobs');
-      const data = await response.json();
+      const data = await fetchWithErrorHandling('/jobs');
       setJobs(data);
     } catch (err) {
       console.error('Error fetching jobs:', err);
-      setError('Failed to fetch jobs');
+      setError(`Failed to fetch jobs: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  }, []);
+  }, [fetchWithErrorHandling]);
 
   const fetchDevices = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/devices`);
-      if (!response.ok) throw new Error('Failed to fetch devices');
-      const data = await response.json();
+      const data = await fetchWithErrorHandling('/devices');
       setDevices(data);
     } catch (err) {
       console.error('Error fetching devices:', err);
-      setError('Failed to fetch devices');
+      setError(`Failed to fetch devices: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  }, []);
+  }, [fetchWithErrorHandling]);
 
   const fetchAlerts = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/alerts`);
-      if (!response.ok) throw new Error('Failed to fetch alerts');
-      const data = await response.json();
+      const data = await fetchWithErrorHandling('/alerts');
       setAlerts(data);
     } catch (err) {
       console.error('Error fetching alerts:', err);
-      setError('Failed to fetch alerts');
+      setError(`Failed to fetch alerts: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  }, []);
+  }, [fetchWithErrorHandling]);
 
   const fetchScanResults = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/scans`);
-      if (!response.ok) throw new Error('Failed to fetch scan results');
-      const data = await response.json();
+      const data = await fetchWithErrorHandling('/scans');
       setScanResults(data);
     } catch (err) {
       console.error('Error fetching scan results:', err);
-      setError('Failed to fetch scan results');
+      setError(`Failed to fetch scan results: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  }, []);
+  }, [fetchWithErrorHandling]);
 
-  // Initial data load
+  // Initial data load with connection check
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      await Promise.all([
-        fetchJobs(),
-        fetchDevices(),
-        fetchAlerts(),
-        fetchScanResults()
-      ]);
+      setConnectionStatus('checking');
+      
+      const isConnected = await checkConnection();
+      
+      if (isConnected) {
+        await Promise.all([
+          fetchJobs(),
+          fetchDevices(),
+          fetchAlerts(),
+          fetchScanResults()
+        ]);
+      }
+      
       setLoading(false);
     };
 
     loadData();
-  }, [fetchJobs, fetchDevices, fetchAlerts, fetchScanResults]);
+  }, [checkConnection, fetchJobs, fetchDevices, fetchAlerts, fetchScanResults]);
 
-  // Polling for real-time updates
+  // Polling for real-time updates (only when connected)
   useEffect(() => {
-    const interval = setInterval(() => {
-      fetchDevices();
-      fetchAlerts();
-      fetchScanResults();
+    if (connectionStatus !== 'connected') {
+      return;
+    }
+
+    const interval = setInterval(async () => {
+      const isConnected = await checkConnection();
+      if (isConnected) {
+        fetchDevices();
+        fetchAlerts();
+        fetchScanResults();
+      }
     }, 30000); // Poll every 30 seconds
 
     return () => clearInterval(interval);
-  }, [fetchDevices, fetchAlerts, fetchScanResults]);
+  }, [connectionStatus, checkConnection, fetchDevices, fetchAlerts, fetchScanResults]);
 
   // Execute scan
   const executeScan = useCallback(async (job: Job): Promise<ScanResult> => {
@@ -100,7 +163,7 @@ export function useArpMonitoring() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to execute scan');
+        throw new Error(`Failed to execute scan: ${response.statusText}`);
       }
 
       // Refresh data after scan
@@ -126,7 +189,7 @@ export function useArpMonitoring() {
       return result;
     } catch (err) {
       console.error('Error executing scan:', err);
-      throw err;
+      throw new Error(`Scan execution failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setIsScanning(false);
     }
@@ -135,101 +198,91 @@ export function useArpMonitoring() {
   // Create job
   const createJob = useCallback(async (jobData: Omit<Job, 'id' | 'createdAt'>) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/jobs`, {
+      const data = await fetchWithErrorHandling('/jobs', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify(jobData),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to create job');
-      }
-
       await fetchJobs();
-      return response.json();
+      return data;
     } catch (err) {
       console.error('Error creating job:', err);
-      throw err;
+      throw new Error(`Failed to create job: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  }, [fetchJobs]);
+  }, [fetchWithErrorHandling, fetchJobs]);
 
   // Update job
   const updateJob = useCallback(async (id: string, updates: Partial<Job>) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/jobs/${id}`, {
+      await fetchWithErrorHandling(`/jobs/${id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify(updates),
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to update job');
-      }
 
       await fetchJobs();
     } catch (err) {
       console.error('Error updating job:', err);
-      throw err;
+      throw new Error(`Failed to update job: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  }, [fetchJobs]);
+  }, [fetchWithErrorHandling, fetchJobs]);
 
   // Delete job
   const deleteJob = useCallback(async (id: string) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/jobs/${id}`, {
+      await fetchWithErrorHandling(`/jobs/${id}`, {
         method: 'DELETE',
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to delete job');
-      }
 
       await fetchJobs();
     } catch (err) {
       console.error('Error deleting job:', err);
-      throw err;
+      throw new Error(`Failed to delete job: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  }, [fetchJobs]);
+  }, [fetchWithErrorHandling, fetchJobs]);
 
   // Acknowledge alert
   const acknowledgeAlert = useCallback(async (id: string) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/alerts/${id}/acknowledge`, {
+      await fetchWithErrorHandling(`/alerts/${id}/acknowledge`, {
         method: 'PATCH',
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to acknowledge alert');
-      }
 
       await fetchAlerts();
     } catch (err) {
       console.error('Error acknowledging alert:', err);
-      throw err;
+      throw new Error(`Failed to acknowledge alert: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  }, [fetchAlerts]);
+  }, [fetchWithErrorHandling, fetchAlerts]);
 
   // Clear alerts
   const clearAlerts = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/alerts`, {
+      await fetchWithErrorHandling('/alerts', {
         method: 'DELETE',
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to clear alerts');
-      }
 
       await fetchAlerts();
     } catch (err) {
       console.error('Error clearing alerts:', err);
-      throw err;
+      throw new Error(`Failed to clear alerts: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  }, [fetchAlerts]);
+  }, [fetchWithErrorHandling, fetchAlerts]);
+
+  // Retry connection
+  const retryConnection = useCallback(async () => {
+    setError(null);
+    setConnectionStatus('checking');
+    const isConnected = await checkConnection();
+    
+    if (isConnected) {
+      await Promise.all([
+        fetchJobs(),
+        fetchDevices(),
+        fetchAlerts(),
+        fetchScanResults()
+      ]);
+    }
+  }, [checkConnection, fetchJobs, fetchDevices, fetchAlerts, fetchScanResults]);
 
   return {
     jobs,
@@ -239,12 +292,14 @@ export function useArpMonitoring() {
     isScanning,
     loading,
     error,
+    connectionStatus,
     executeScan,
     createJob,
     updateJob,
     deleteJob,
     acknowledgeAlert,
     clearAlerts,
+    retryConnection,
     refreshData: () => {
       fetchJobs();
       fetchDevices();
